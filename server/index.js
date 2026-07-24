@@ -56,6 +56,13 @@ function getMafiaCount(playerCount) {
   return 1;
 }
 
+function canParticipateAfterElimination(player, roundNumber) {
+  if (!player) return false;
+  if (player.alive) return true;
+  if (player.eliminatedInRound == null) return false;
+  return roundNumber <= player.eliminatedInRound + 1;
+}
+
 function broadcastRoomUpdate(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
@@ -66,7 +73,7 @@ function broadcastRoomUpdate(roomCode) {
 
   const tally = {};
   room.players.forEach(p => {
-    const canVote = p.alive || (p.eliminatedInRound === room.roundNumber);
+    const canVote = canParticipateAfterElimination(p, room.roundNumber);
     if (canVote && p.votedFor) tally[p.votedFor] = (tally[p.votedFor] || 0) + 1;
   });
 
@@ -77,6 +84,7 @@ function broadcastRoomUpdate(roomCode) {
       id: p.id, name: p.name, avatar: p.avatar || null, alive: p.alive, votedFor: p.votedFor,
       hasCheckedRole: p.hasCheckedRole,
       eliminatedInRound: p.eliminatedInRound || null,
+      doctorSelfSaveUsed: p.doctorSelfSaveUsed || false,
       role: (p.id === recipientId || (isRecipientMafia && p.role === 'MAFIA' && room.phase !== 'LOBBY')) ? p.role : null,
       isProtected: p.isProtected || false
     }));
@@ -95,6 +103,7 @@ function broadcastRoomUpdate(roomCode) {
         mafiaTarget: room.nightActions?.mafiaTarget || null,
         mafiaVotes: room.nightActions?.mafiaVotes || {},
         detectiveHasActed: !isDetectiveAlive || room.nightActions?.detectiveCheck !== null,
+        detectiveHint: room.nightActions?.detectiveHint || null,
         doctorHasActed: !isDoctorAlive || room.nightActions?.doctorTarget !== null,
         mafiaAlive: isMafiaAlive, detectiveAlive: isDetectiveAlive, doctorAlive: isDoctorAlive
       }
@@ -139,7 +148,7 @@ function resolveVoting(roomCode) {
 
   const votes = {};
   room.players.forEach(p => {
-    const canVote = p.alive || (p.eliminatedInRound === room.roundNumber);
+    const canVote = canParticipateAfterElimination(p, room.roundNumber);
     if (canVote && p.votedFor) votes[p.votedFor] = (votes[p.votedFor] || 0) + 1;
   });
 
@@ -306,7 +315,7 @@ io.on('connection', (socket) => {
     const code = generateRoomCode();
     rooms[code] = {
       code, phase: 'LOBBY', roundNumber: 1, hostSocketId: socket.id, players: [],
-      nightActions: { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, doctorTarget: null },
+      nightActions: { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, detectiveHint: null, doctorTarget: null },
       nightTurn: null,
       dayLog: [], timer: 0, announcementText: '', pendingDeathId: null, lynchedPlayerId: null, winner: null
     };
@@ -326,7 +335,7 @@ io.on('connection', (socket) => {
     const playerId = (Math.random() + 1).toString(36).substring(2, 8);
     const existingAvatars = room.players.map(p => p.avatar).filter(Boolean);
     const avatar = getRandomAvatar(existingAvatars);
-    const newPlayer = { id: socket.id, playerId, name: name.trim(), avatar, role: null, alive: true, votedFor: null, hasCheckedRole: false, isProtected: false, eliminatedInRound: null };
+    const newPlayer = { id: socket.id, playerId, name: name.trim(), avatar, role: null, alive: true, votedFor: null, hasCheckedRole: false, isProtected: false, eliminatedInRound: null, doctorSelfSaveUsed: false };
     room.players.push(newPlayer);
     socket.join(code);
     if (callback) callback({ status: 'ok', player: newPlayer, playerId });
@@ -404,12 +413,13 @@ io.on('connection', (socket) => {
       else if (detectiveAssigned < 1) { rp.role = 'DETECTIVE'; detectiveAssigned++; }
       else if (doctorAssigned < 1) { rp.role = 'DOCTOR'; doctorAssigned++; }
       else { rp.role = 'VILLAGER'; }
-      rp.alive = true; rp.votedFor = null; rp.hasCheckedRole = false; rp.isProtected = false; rp.eliminatedInRound = null;
+      rp.alive = true; rp.votedFor = null; rp.hasCheckedRole = false; rp.isProtected = false; rp.eliminatedInRound = null; rp.doctorSelfSaveUsed = false;
     });
 
     room.phase = 'ROLE_REVEAL';
     room.roundNumber = 1;
     room.dayLog = ['🔐 Check your secret identity on your device.'];
+    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, detectiveHint: null, doctorTarget: null };
     room.players.forEach((player) => io.to(player.id).emit('role_assigned', { role: player.role }));
     if (callback) callback({ status: 'ok' });
     broadcastRoomUpdate(code);
@@ -444,7 +454,7 @@ io.on('connection', (socket) => {
 
     room.phase = 'NIGHT';
     room.dayLog = ['🌙 Night falls. Close your eyes.'];
-    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, doctorTarget: null };
+    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, detectiveHint: null, doctorTarget: null };
     room.players.forEach(p => { p.isProtected = false; p.votedFor = null; });
 
     const isMafiaAlive = room.players.some(p => p.role === 'MAFIA' && p.alive);
@@ -527,11 +537,19 @@ io.on('connection', (socket) => {
         };
       }
 
+      room.nightActions.detectiveHint = hintData;
+
       if (roomTimers[code]) clearInterval(roomTimers[code]);
       if (callback) callback({ status: 'ok', ...hintData });
       setTimeout(() => advanceNightTurn(code), 500);
     } else if (type === 'DOCTOR' && player.role === 'DOCTOR' && isDoctorTurn) {
-      if (targetId === socket.id) { if (callback) callback({ status: 'error', message: 'You cannot protect yourself' }); return; }
+      if (targetId === socket.id) {
+        if (player.doctorSelfSaveUsed) {
+          if (callback) callback({ status: 'error', message: 'You have already used your one self-save.' });
+          return;
+        }
+        player.doctorSelfSaveUsed = true;
+      }
       room.nightActions.doctorTarget = targetId;
       if (roomTimers[code]) clearInterval(roomTimers[code]);
       if (callback) callback({ status: 'ok' });
@@ -629,12 +647,12 @@ io.on('connection', (socket) => {
     const room = rooms[code];
     if (!room || room.phase !== 'VOTING') { if (callback) callback({ status: 'error', message: 'Not in Voting phase' }); return; }
     const voter = room.players.find(p => p.id === socket.id);
-    const canVoteThisRound = voter && (voter.alive || voter.eliminatedInRound === room.roundNumber);
+    const canVoteThisRound = canParticipateAfterElimination(voter, room.roundNumber);
     if (!voter || !canVoteThisRound) { if (callback) callback({ status: 'error', message: 'You cannot vote in this round' }); return; }
     voter.votedFor = targetId;
     if (callback) callback({ status: 'ok' });
 
-    const eligibleVoters = room.players.filter(p => p.alive || (p.eliminatedInRound === room.roundNumber));
+    const eligibleVoters = room.players.filter(p => canParticipateAfterElimination(p, room.roundNumber));
     const votesCount = eligibleVoters.filter(p => p.votedFor !== null).length;
     if (votesCount === eligibleVoters.length && eligibleVoters.length > 0) {
       if (roomTimers[code]) clearInterval(roomTimers[code]);
@@ -679,7 +697,7 @@ io.on('connection', (socket) => {
     room.phase = 'NIGHT';
     room.roundNumber = (room.roundNumber || 1) + 1;
     room.dayLog = [`🌙 Round ${room.roundNumber} - Night falls again. Close your eyes.`];
-    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, doctorTarget: null };
+    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, detectiveHint: null, doctorTarget: null };
     room.players.forEach(p => { p.votedFor = null; p.isProtected = false; });
 
     const isMafiaAlive = room.players.some(p => p.role === 'MAFIA' && p.alive);
@@ -734,7 +752,7 @@ io.on('connection', (socket) => {
     room.phase = 'ROLE_REVEAL';
     room.roundNumber = 1;
     room.dayLog = ['🔄 New game! Check your secret identity.'];
-    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, doctorTarget: null };
+    room.nightActions = { mafiaTarget: null, mafiaVotes: {}, detectiveCheck: null, detectiveHint: null, doctorTarget: null };
     room.nightTurn = null;
     room.announcementText = '';
     room.pendingDeathId = null;
@@ -742,7 +760,10 @@ io.on('connection', (socket) => {
     room.winner = null;
     room.timer = 0;
 
-    room.players.forEach((player) => io.to(player.id).emit('role_assigned', { role: player.role }));
+    room.players.forEach((player) => {
+      player.doctorSelfSaveUsed = false;
+      io.to(player.id).emit('role_assigned', { role: player.role });
+    });
     if (callback) callback({ status: 'ok' });
     broadcastRoomUpdate(code);
   });
@@ -755,7 +776,7 @@ io.on('connection', (socket) => {
     const isHostSender = socket.id === room.hostSocketId;
     if (!player && !isHostSender) { if (callback) callback({ status: 'error', message: 'Not authorized' }); return; }
 
-    const canActThisRound = isHostSender || (player && (player.alive || player.eliminatedInRound === room.roundNumber));
+    const canActThisRound = isHostSender || canParticipateAfterElimination(player, room.roundNumber);
     if (!canActThisRound) {
       if (callback) callback({ status: 'error', message: 'You can only view chat in rounds after your elimination.' });
       return;

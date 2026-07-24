@@ -462,6 +462,9 @@ useEffect(() => {
 
       const me = updatedRoom.players?.find(p => p.id === socket.id);
       if (me) setJoinedPlayer(me);
+      if (me?.role === 'DETECTIVE' && updatedRoom.nightActions?.detectiveHint) {
+        setDetectiveResult(updatedRoom.nightActions.detectiveHint);
+      }
     };
 
     const handleRoleAssigned = ({ role }) => {
@@ -586,7 +589,8 @@ useEffect(() => {
   const canActThisRound = useMemo(() => {
     if (!joinedPlayer) return false;
     if (joinedPlayer.alive) return true;
-    return joinedPlayer.eliminatedInRound === room?.roundNumber;
+    if (joinedPlayer.eliminatedInRound == null || room?.roundNumber == null) return false;
+    return room.roundNumber <= joinedPlayer.eliminatedInRound + 1;
   }, [joinedPlayer, room?.roundNumber]);
 
   const effectiveChannel = useMemo(() => {
@@ -1898,8 +1902,12 @@ useEffect(() => {
                               </button>
                             ))}
                           </div>
-                          <button onClick={handleNightAction} disabled={!selectedTarget} className="btn btn-teal btn-full">
-                            Protect
+                          <button
+                            onClick={handleNightAction}
+                            disabled={!selectedTarget || (selectedTarget === joinedPlayer?.id && joinedPlayer?.doctorSelfSaveUsed)}
+                            className="btn btn-teal btn-full"
+                          >
+                            {selectedTarget === joinedPlayer?.id && joinedPlayer?.doctorSelfSaveUsed ? 'Self-Save Used' : 'Protect'}
                           </button>
                         </div>
                       )}
