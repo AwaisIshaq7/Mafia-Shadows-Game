@@ -713,6 +713,26 @@ body::after {
   box-shadow: 0 2px 6px rgba(124, 58, 237, 0.2);
 }
 
+.player-avatar-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--violet), #a78bfa);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.2);
+}
+
+.player-avatar-circle.dead {
+  background: linear-gradient(135deg, rgba(225, 29, 72, 0.95), rgba(88, 28, 135, 0.8));
+  box-shadow: 0 2px 10px rgba(225, 29, 72, 0.25);
+}
+
 .role-tag {
   font-size: 9px;
   font-weight: 800;

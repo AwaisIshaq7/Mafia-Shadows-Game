@@ -166,6 +166,29 @@ const VoiceNotePlayer = React.memo(({ msg, playingId, progress, onPlayToggle }) 
 });
 
 // ========================================================
+// PLAYER AVATAR COMPONENT
+// ========================================================
+const PlayerAvatar = React.memo(({ avatar, name, size = 32, alive = true, style = {} }) => {
+  const displayChar = avatar || (name ? name[0].toUpperCase() : '?');
+  const isEmoji = avatar && /\p{Emoji}/u.test(avatar);
+  return (
+    <div
+      className={`player-avatar-circle ${!alive ? 'dead' : ''}`}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        fontSize: isEmoji ? `${size * 0.55}px` : `${size * 0.42}px`,
+        lineHeight: `${size}px`,
+        ...style
+      }}
+      title={name || ''}
+    >
+      {!alive ? '💀' : displayChar}
+    </div>
+  );
+});
+
+// ========================================================
 // MAIN APP COMPONENT
 // ========================================================
 function App() {
@@ -560,12 +583,18 @@ useEffect(() => {
   // ========================================================
   // FILTERED MESSAGES & CHANNEL
   // ========================================================
+  const canActThisRound = useMemo(() => {
+    if (!joinedPlayer) return false;
+    if (joinedPlayer.alive) return true;
+    return joinedPlayer.eliminatedInRound === room?.roundNumber;
+  }, [joinedPlayer, room?.roundNumber]);
+
   const effectiveChannel = useMemo(() => {
     if (!room) return 'TOWN';
-    if (joinedPlayer && !joinedPlayer.alive) return 'DEAD';
+    if (!canActThisRound) return 'DEAD';
     if (room.phase === 'NIGHT' && myRole === 'MAFIA') return 'MAFIA';
     return 'TOWN';
-  }, [room, joinedPlayer, myRole]);
+  }, [room, canActThisRound, myRole]);
 
   const filteredMessages = useMemo(() => {
     return messages.filter(msg => {
@@ -716,7 +745,13 @@ useEffect(() => {
       if (response?.status === 'ok') {
         if (myRole === 'DETECTIVE') {
           const targetName = room.players.find(p => p.id === selectedTarget)?.name || 'Unknown';
-          setDetectiveResult({ name: targetName, isMafia: response.isMafia });
+          setDetectiveResult({
+            name: targetName,
+            isMafia: response.isMafia,
+            suppositionText: response.suppositionText,
+            candidateA: response.candidateA,
+            candidateB: response.candidateB
+          });
         }
       } else {
         alert(response?.message || 'Action failed.');
@@ -970,9 +1005,13 @@ useEffect(() => {
                         const isAlive = p.alive !== false;
                         items.push(
                           <div key={p.id} className={`slot-card filled`} style={!isAlive ? { opacity: 0.5 } : {}}>
-                            <div className="slot-avatar" style={!isAlive ? { background: 'rgba(225,29,72,0.3)' } : {}}>
-                              {isAlive ? p.name[0].toUpperCase() : '💀'}
-                            </div>
+                            <PlayerAvatar
+                              avatar={p.avatar}
+                              name={p.name}
+                              alive={isAlive}
+                              size={28}
+                              style={!isAlive ? { background: 'rgba(225,29,72,0.3)' } : {}}
+                            />
                             <span className="slot-name">{p.name}</span>
                           </div>
                         );
@@ -1035,7 +1074,7 @@ useEffect(() => {
                 <h3 style={{ fontSize: '16px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Roles</h3>
                 {room.players.map(p => (
                   <div key={p.id} className="player-chip" style={{ marginBottom: '8px' }}>
-                    <div className="player-avatar">{p.name[0].toUpperCase()}</div>
+                    <PlayerAvatar avatar={p.avatar} name={p.name} size={28} />
                     <span style={{ fontWeight: 600 }}>{p.name}</span>
                     <span className={`role-tag ${p.role?.toLowerCase() || 'villager'}`} style={{ marginLeft: 'auto' }}>
                       {p.role || '?'}
@@ -1337,7 +1376,7 @@ useEffect(() => {
                 </h3>
                 {room.players.map(p => (
                   <div key={p.id} className="player-chip" style={{ opacity: p.alive ? 1 : 0.4, marginBottom: '8px' }}>
-                    <div className="player-avatar">{p.alive ? p.name[0].toUpperCase() : '💀'}</div>
+                    <PlayerAvatar avatar={p.avatar} name={p.name} alive={p.alive} size={28} />
                     <span style={{ fontWeight: 600 }}>{p.name}</span>
                     <span className="badge" style={{ marginLeft: 'auto' }}>
                       {p.alive ? '✅ Alive' : '💀 Dead'}
@@ -1384,6 +1423,7 @@ useEffect(() => {
                 <h3 style={{ fontSize: '16px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ballots</h3>
                 {room.players.filter(p => p.alive).map(p => (
                   <div key={p.id} className="player-chip" style={{ marginBottom: '8px' }}>
+                    <PlayerAvatar avatar={p.avatar} name={p.name} size={28} />
                     <span style={{ fontWeight: 600 }}>{p.name}</span>
                     <span className="badge" style={{ marginLeft: 'auto' }}>
                       {p.votedFor !== null ? '✅ Voted' : '⏳ Pending'}
@@ -1545,13 +1585,25 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Dead Overlay */}
+        {/* Elimination / Spectator Banner */}
         {!joinedPlayer?.alive && room.phase !== 'ENDED' && (
-          <div className="card card-sm" style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.15)', marginBottom: '14px', textAlign: 'center' }}>
-            <div style={{ fontSize: '28px', marginBottom: '4px' }}>💀</div>
-            <h4 style={{ color: 'var(--accent-text)' }}>You have been eliminated</h4>
-            <p style={{ fontSize: '12px', color: 'var(--text-soft)' }}>You can observe but cannot participate.</p>
-          </div>
+          canActThisRound ? (
+            <div className="card card-sm" style={{ background: 'rgba(234,179,8,0.08)', borderColor: 'rgba(234,179,8,0.25)', marginBottom: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '28px', marginBottom: '4px' }}>⚠️</div>
+              <h4 style={{ color: 'var(--accent-amber)' }}>Eliminated in Round {room.roundNumber || 1}</h4>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                You were eliminated in this round! You may still chat and vote for Round {room.roundNumber || 1} until the next round begins.
+              </p>
+            </div>
+          ) : (
+            <div className="card card-sm" style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.15)', marginBottom: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '28px', marginBottom: '4px' }}>👁️</div>
+              <h4 style={{ color: 'var(--accent-text)' }}>Spectator Mode</h4>
+              <p style={{ fontSize: '12px', color: 'var(--text-soft)' }}>
+                You were eliminated in an earlier round. You can view all chats and live vote tallies for subsequent rounds.
+              </p>
+            </div>
+          )
         )}
 
           {/* LOBBY */}
@@ -1704,9 +1756,25 @@ useEffect(() => {
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Waiting for other roles...</p>
                         {myRole === 'DETECTIVE' && detectiveResult && (
                           <div className="card card-sm" style={{ marginTop: '12px', background: detectiveResult.isMafia ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', borderColor: detectiveResult.isMafia ? 'var(--accent-red)' : 'var(--accent-green)' }}>
-                            <p style={{ fontWeight: 700 }}>
-                              {detectiveResult.name} is {detectiveResult.isMafia ? '👿 MAFIA' : '✅ CLEAN'}
-                            </p>
+                            {detectiveResult.isMafia ? (
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', justifyContent: 'center' }}>
+                                  <span style={{ fontSize: '18px' }}>🕵️‍♂️</span>
+                                  <h5 style={{ color: 'var(--accent-red)', margin: 0, textTransform: 'uppercase' }}>50/50 Supposition Hint</h5>
+                                </div>
+                                <p style={{ fontSize: '13px', fontWeight: 600, color: 'white', marginBottom: '8px' }}>
+                                  {detectiveResult.suppositionText}
+                                </p>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                  <span className="badge badge-crimson">{detectiveResult.candidateA} (50%)</span>
+                                  <span className="badge badge-amber">{detectiveResult.candidateB} (50%)</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <p style={{ fontWeight: 700, color: 'var(--accent-green)' }}>
+                                {detectiveResult.suppositionText}
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1729,10 +1797,49 @@ useEffect(() => {
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                             <span className="badge badge-crimson" style={{ fontSize: '12px', animation: 'glowPulse 2s ease-in-out infinite' }}>YOUR TURN</span>
-                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Choose a target</span>
+                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                              {room.players.filter(p => p.role === 'MAFIA' && p.alive).length > 1
+                                ? 'Coordinate target with your fellow Mafia'
+                                : 'Choose a target to eliminate'}
+                            </span>
                           </div>
+
+                          {/* Multi-Mafia Consensus Tracker */}
+                          {(() => {
+                            const aliveMafias = room.players.filter(p => p.role === 'MAFIA' && p.alive);
+                            if (aliveMafias.length > 1) {
+                              const mafiaVotes = room.nightActions?.mafiaVotes || {};
+                              const teammateVotes = aliveMafias.map(m => ({ name: m.name, isMe: m.id === socket?.id, targetId: mafiaVotes[m.id] }));
+                              const allVoted = teammateVotes.every(t => t.targetId);
+                              const allAgree = allVoted && teammateVotes.every(t => t.targetId === teammateVotes[0].targetId);
+
+                              return (
+                                <div className="card card-sm" style={{ background: 'rgba(225,29,72,0.08)', borderColor: 'rgba(225,29,72,0.25)', marginBottom: '12px', textAlign: 'left' }}>
+                                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent-red)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                    🤝 Mafia Team Target Consensus
+                                  </div>
+                                  {teammateVotes.map((t, idx) => {
+                                    const targetName = room.players.find(p => p.id === t.targetId)?.name;
+                                    return (
+                                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '2px 0' }}>
+                                        <span>{t.isMe ? '👤 You' : `🔪 ${t.name}`}:</span>
+                                        <span style={{ fontWeight: 700, color: targetName ? 'var(--accent-amber)' : 'var(--text-muted)' }}>
+                                          {targetName ? `Selected: ${targetName}` : 'Choosing...'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                  <div style={{ marginTop: '6px', fontSize: '11px', color: allAgree ? 'var(--accent-green)' : 'var(--accent-amber)', fontWeight: 600 }}>
+                                    {allAgree ? '✅ Both Mafias agree! Eliminating target...' : '⚠️ Both Mafias must select the SAME target to confirm kill.'}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', marginBottom: '12px' }}>
-                            {room.players.filter(p => p.id !== joinedPlayer?.id && p.alive).map(p => (
+                            {room.players.filter(p => p.id !== joinedPlayer?.id && p.alive && p.role !== 'MAFIA').map(p => (
                               <button
                                 key={p.id}
                                 onClick={() => setSelectedTarget(p.id)}
@@ -1744,7 +1851,7 @@ useEffect(() => {
                             ))}
                           </div>
                           <button onClick={handleNightAction} disabled={!selectedTarget} className="btn btn-danger btn-full">
-                            Eliminate Target
+                            Select Target
                           </button>
                         </div>
                       )}
@@ -1804,7 +1911,7 @@ useEffect(() => {
           )}
 
           {/* DAY */}
-          {room.phase === 'DAY' && joinedPlayer?.alive && (
+          {room.phase === 'DAY' && (joinedPlayer?.alive || canActThisRound || room.phase !== 'LOBBY') && (
             <div>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div className="event-log" style={{ textAlign: 'left', marginTop: '8px' }}>
@@ -1853,7 +1960,10 @@ useEffect(() => {
                       return (
                         <div key={i} className={`chat-bubble ${isMe ? 'outgoing' : 'incoming'} ${isMafia ? 'channel-mafia' : ''}`}>
                           <div className="chat-bubble-meta" style={{ justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                            <span>{msg.senderName}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <PlayerAvatar avatar={msg.senderAvatar} name={msg.senderName} size={22} />
+                              <span>{msg.senderName}</span>
+                            </div>
                             <span>{msg.timestamp}</span>
                           </div>
                           <div className="chat-bubble-text" style={msg.type === 'voice_note' ? { padding: 0, background: 'transparent', border: 'none' } : {}}>
@@ -1882,12 +1992,12 @@ useEffect(() => {
                       maxLength={120}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Type a message..."
+                      placeholder={canActThisRound ? "Type a message..." : "Spectator mode (Read-only)"}
                       className="field-input"
                       style={{ padding: '10px 14px', fontSize: '14px', borderRadius: 'var(--radius-sm)' }}
-                      disabled={!joinedPlayer?.alive}
+                      disabled={!canActThisRound}
                     />
-                    <button type="submit" className="btn btn-primary btn-sm" disabled={!joinedPlayer?.alive}>
+                    <button type="submit" className="btn btn-primary btn-sm" disabled={!canActThisRound}>
                       Send
                     </button>
                   </form>
@@ -1902,7 +2012,7 @@ useEffect(() => {
                           <span className="record-pulse">0:0{recordingTime}/0:15</span>
                         </>
                       ) : (
-                        <button onClick={startRecording} className="voice-note-rec-btn" disabled={!joinedPlayer?.alive}>
+                        <button onClick={startRecording} className="voice-note-rec-btn" disabled={!canActThisRound}>
                           🎤 Record Voice
                         </button>
                       )}
@@ -1914,7 +2024,7 @@ useEffect(() => {
           )}
 
           {/* VOTING */}
-          {room.phase === 'VOTING' && joinedPlayer?.alive && (
+          {room.phase === 'VOTING' && (joinedPlayer?.alive || canActThisRound || room.phase !== 'LOBBY') && (
             <div>
               {/* Player Status Widget */}
               <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -1928,7 +2038,29 @@ useEffect(() => {
                   👥 {room.players.length} Total
                 </span>
               </div>
-              {votedTarget ? (
+              {!canActThisRound ? (
+                <div>
+                  <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '32px', marginBottom: '4px' }}>👁️</div>
+                    <h4 style={{ color: 'var(--accent-text)' }}>Spectating Votes</h4>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>You cannot vote in subsequent rounds after elimination.</p>
+                  </div>
+                  <div className="card card-sm" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                    <h5 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      Live Tally
+                    </h5>
+                    {room.players.filter(p => p.alive).map(p => {
+                      const votes = (room.voteTally || {})[p.id] || 0;
+                      return (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '2px 0' }}>
+                          <span>{p.name}</span>
+                          <span style={{ color: votes > 0 ? 'var(--accent-red)' : 'var(--text-muted)' }}>{votes}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : votedTarget ? (
                 <div>
                   <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                     <div style={{ fontSize: '32px', marginBottom: '8px' }}>🗳️</div>
@@ -1985,7 +2117,7 @@ useEffect(() => {
           )}
 
           {/* NIGHT_RESOLVED */}
-          {room.phase === 'NIGHT_RESOLVED' && joinedPlayer?.alive && (
+          {room.phase === 'NIGHT_RESOLVED' && (
             <div style={{ textAlign: 'center' }}>
               <div className="phase-icon-ring" style={{ margin: '0 auto 12px' }}>📰</div>
               <h4>Morning Report Pending</h4>
@@ -1996,7 +2128,7 @@ useEffect(() => {
           )}
 
           {/* VOTE_RESOLVED */}
-          {room.phase === 'VOTE_RESOLVED' && joinedPlayer?.alive && (
+          {room.phase === 'VOTE_RESOLVED' && (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '48px', marginBottom: '8px' }}>⚖️</div>
               <h4>Verdict Reached</h4>
