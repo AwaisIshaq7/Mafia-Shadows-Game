@@ -225,14 +225,17 @@ function resolveNightToDraft(roomCode) {
   const doctorTargetId = r.nightActions?.doctorTarget;
   const mafiaTarget = r.players.find(p => p.id === mafiaTargetId);
   const doctorTarget = r.players.find(p => p.id === doctorTargetId);
-  if (doctorTarget && doctorTarget.alive) doctorTarget.isProtected = true;
-  const isTargetProtected = mafiaTarget?.isProtected || false;
+  const isTargetProtected = Boolean(
+    mafiaTarget &&
+    doctorTarget &&
+    doctorTarget.alive &&
+    doctorTarget.id === mafiaTarget.id
+  );
   let draftText = '';
   if (mafiaTarget && mafiaTarget.alive) {
     if (isTargetProtected) {
       draftText = `🌙 The Mafia attempted to eliminate ${mafiaTarget.name}, but the Doctor saved them!`;
       r.pendingDeathId = null;
-      mafiaTarget.isProtected = false;
     } else {
       draftText = `🌙 ${mafiaTarget.name} was eliminated during the night.`;
       r.pendingDeathId = mafiaTarget.id;
@@ -551,11 +554,15 @@ io.on('connection', (socket) => {
     const doctorTargetId = room.nightActions?.doctorTarget;
     const mafiaTarget = room.players.find(p => p.id === mafiaTargetId);
     const doctorTarget = room.players.find(p => p.id === doctorTargetId);
-    if (doctorTarget && doctorTarget.alive) doctorTarget.isProtected = true;
-    const isTargetProtected = mafiaTarget?.isProtected || false;
+    const isTargetProtected = Boolean(
+      mafiaTarget &&
+      doctorTarget &&
+      doctorTarget.alive &&
+      doctorTarget.id === mafiaTarget.id
+    );
     let draftText = '';
     if (mafiaTarget && mafiaTarget.alive) {
-      if (isTargetProtected) { draftText = `🌙 The Mafia attempted to eliminate ${mafiaTarget.name}, but the Doctor saved them!`; room.pendingDeathId = null; mafiaTarget.isProtected = false; }
+      if (isTargetProtected) { draftText = `🌙 The Mafia attempted to eliminate ${mafiaTarget.name}, but the Doctor saved them!`; room.pendingDeathId = null; }
       else { draftText = `🌙 ${mafiaTarget.name} was eliminated during the night.`; room.pendingDeathId = mafiaTarget.id; }
     } else { draftText = `🌙 No one was eliminated during the night.`; room.pendingDeathId = null; }
     room.phase = 'NIGHT_RESOLVED';
