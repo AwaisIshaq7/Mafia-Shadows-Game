@@ -194,7 +194,7 @@ function checkWinConditions(roomCode) {
     return true;
   }
 
-  if (mafiaAlive >= villagersAlive) {
+  if (mafiaAlive > villagersAlive) {
     room.phase = 'ENDED';
     room.winner = 'MAFIA';
     const allRoles = {};
