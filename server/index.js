@@ -517,7 +517,7 @@ io.on('connection', (socket) => {
           targetName: targetPlayer.name,
           candidateA: candidateNames[0],
           candidateB: candidateNames[1],
-          suppositionText: `🔍 Hint: Either ${candidateNames[0]} or ${candidateNames[1]} is a Mafia member (50/50 supposition).`
+          suppositionText: `🔍 Your clue points to one of these two suspects: ${candidateNames[0]} or ${candidateNames[1]}.`
         };
       } else {
         hintData = {

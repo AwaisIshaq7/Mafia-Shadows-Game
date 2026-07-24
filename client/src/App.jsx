@@ -1760,14 +1760,14 @@ useEffect(() => {
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', justifyContent: 'center' }}>
                                   <span style={{ fontSize: '18px' }}>🕵️‍♂️</span>
-                                  <h5 style={{ color: 'var(--accent-red)', margin: 0, textTransform: 'uppercase' }}>50/50 Supposition Hint</h5>
+                                  <h5 style={{ color: 'var(--accent-red)', margin: 0, textTransform: 'uppercase' }}>Detective Clue</h5>
                                 </div>
                                 <p style={{ fontSize: '13px', fontWeight: 600, color: 'white', marginBottom: '8px' }}>
                                   {detectiveResult.suppositionText}
                                 </p>
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                  <span className="badge badge-crimson">{detectiveResult.candidateA} (50%)</span>
-                                  <span className="badge badge-amber">{detectiveResult.candidateB} (50%)</span>
+                                  <span className="badge badge-crimson">{detectiveResult.candidateA}</span>
+                                  <span className="badge badge-amber">{detectiveResult.candidateB}</span>
                                 </div>
                               </div>
                             ) : (
